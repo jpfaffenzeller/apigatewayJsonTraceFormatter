@@ -1,0 +1,121 @@
+<!doctype html>
+
+<html lang="en">
+    <head>
+        <title>JSON Transaction Trace Formatter</title>
+        <meta charset="utf-8">
+        <meta name="description" content="Format a JSON transaction trace to something readable by human">
+        <meta name="author" content="jpfaffenzeller">
+        <style>
+            .error {
+                color: red;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="container">
+            <div id="file">
+                <label for="tracefile">Select your JSON trace file</label>
+                <input type="file" id="tracefile" name="tracefile" accept="application/json"/>
+            </div>
+            <div><pre id="circuit"></pre></div>
+            <div><pre id="legs"></pre></div>
+            <div><pre id="output"></pre></div>
+        </div>
+        
+        <script>
+            (function () {
+                function readFile(input) {
+                
+                    function printCircuitPath(json, div, tab){
+                        for (let i=0; i < tab; i++) div.innerHTML += "  ";
+                        div.innerHTML += "+ " + json.policy + " (" + json.execTime + "ms)\n";
+                        tab +=1;
+                        json.filters.forEach( (obj) => {
+                            for (let i=0; i < tab; i++) div.innerHTML += "  ";
+                            div.innerHTML += "- " + obj.name + "(" + obj.status + " in " + obj.execTime + "ms)\n";
+                            if (obj.hasOwnProperty("subPaths")) {
+                                obj.subPaths.forEach( (o) => { 
+                                    printCircuitPath(o, div, tab+1); 
+                                 });
+                            }
+                        });
+                    }
+                    
+                    function setError(msg, div) {
+                        div.innerHTML = "something wrong happened \n";
+                        div.innerHTML += msg;
+                        div.classList.add("error");
+                    }
+                    
+                    function parseJSON(data, div) {
+                        try {
+                            return JSON.parse(data);
+                        } catch(error) {
+                            setError(error, div);
+                            return null;
+                        }
+                    }
+                    
+                    const file = input.target.files[0];
+                    const output = document.getElementById("output");
+                    output.innerHTML = "--- Transaction traces ---\n\n"; 
+                    const legs = document.getElementById("legs");
+                    legs.innerHTML = "--- Legs ---\n\n";
+                    const circuit = document.getElementById("circuit");
+                    circuit.innerHTML = "--- Circuit path ---\n\n";
+                    const reader = new FileReader();
+                    
+                    reader.readAsText(file);
+                    
+                    reader.onload = () => { 
+                        let handle100 = false;
+                        let legstring = "";
+                        const parsed = parseJSON(reader.result, output);
+                        if (parsed) {
+                            output.classList.remove("error");
+                            circuit.classList.remove("error");
+                            parsed.forEach( (obj) => {
+                                if (obj.tag === "circuitpath") {
+                                    const c = parseJSON(obj.data, circuit);
+                                    if (c) {
+                                        c.forEach( (policies) => { printCircuitPath(policies, circuit, 0); });
+                                    }
+                                }
+                                if (obj.tag === "sent" || obj.tag === "received"){
+                                    const l = obj.data.split('\r\n\r\n');
+                                    if ( !handle100 && !l[0].toLowerCase().includes("Expect: 100-continue".toLowerCase()) ){
+                                        legstring += "- Leg " + obj.leg + " (" + obj.tag + ")\n";
+                                        legstring += l[0] + "\n" + "<textarea>" + l[1] + "</textarea>\n\n";
+                                    } else if (l[0].toLowerCase().includes("Expect: 100-continue".toLowerCase())) {
+                                        legstring += "- Leg " + obj.leg + " (" + obj.tag + ")\n";
+                                        legstring += l[0] + "\n" + "<textarea>";
+                                        handle100 = true;
+                                    }else if ( handle100 &&  obj.tag === "received") {
+                                        legstring += obj.data + "</textarea>" + "\n\n";
+                                        handle100 = false;
+                                    }
+                                }
+                                if (obj.tag === "trace") {
+                                    output.innerHTML += obj.data.level + "\t";
+                                    const d = new Date(obj.data.time);
+                                    output.innerHTML += d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2) + " " 
+                                                        + ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) + ":" + ("0" + d.getSeconds()).slice(-2) + "\t";
+                                    for (let i=0; i < obj.data.depth; i++) output.innerHTML += "\t";
+                                    output.innerHTML += obj.data.text + "\n";
+                                }
+                            });
+                            legs.innerHTML += legstring;
+                        }
+                    }
+                    reader.onerror = () => { 
+                        setError(reader.error, output);
+                    }
+                }
+                
+                const trace = document.getElementById("tracefile");
+                trace.addEventListener("change", readFile);
+            })();
+        </script>
+    </body>
+</html>
