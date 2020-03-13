@@ -8,5 +8,5 @@ That's just an html file, so open it with your web browser, select the trace fil
 
 ## Additional Notes
 
-- Just tested with Firefox but it should work other browsers
+- Just tested with Firefox but it should work with other browsers
 - Most use case has been tested, but might be not all.
